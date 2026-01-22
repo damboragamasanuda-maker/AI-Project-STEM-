@@ -107,3 +107,7 @@ http://localhost:8000/docs
 Conclusion
 This system demonstrates the IKMS Feature 4 – Multi-Agent RAG API architecture using FastAPI.
 It validates document ingestion, structured API design, and future extensibility for intelligent retrieval workflows.
+
+Deployment attempted on Railway & Vercel.
+Build failed due to FastAPI entrypoint constraints.
+Project is fully runnable locally (see UserGuide.md).
