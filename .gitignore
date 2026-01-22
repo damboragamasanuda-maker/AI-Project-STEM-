@@ -1,3 +1,4 @@
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -18,5 +19,27 @@ venv/
 __pycache__/
 .env
 *.pyc
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Build artifacts
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Editor / OS files
+.vscode/
+ (Initial commit - clean RAG project)
 .DS_Store
 

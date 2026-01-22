@@ -4,8 +4,9 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from .models import QuestionRequest, QAResponse
-from .services.qa_service import answer_question
 from .services.indexing_service import index_pdf_file
+# NOTE: qa_service is intentionally NOT called for Feature 4 demo
+# from .services.qa_service import answer_question
 
 
 app = FastAPI(
@@ -22,16 +23,13 @@ app = FastAPI(
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(
     request: Request, exc: Exception
-) -> JSONResponse:  # pragma: no cover - simple demo handler
-    """Catch-all handler for unexpected errors.
-
-    FastAPI will still handle `HTTPException` instances and validation errors
-    separately; this is only for truly unexpected failures so API consumers
-    get a consistent 500 response body.
+) -> JSONResponse:
+    """
+    Catch-all handler for unexpected errors.
+    Ensures a consistent JSON response for unhandled exceptions.
     """
 
     if isinstance(exc, HTTPException):
-        # Let FastAPI handle HTTPException as usual.
         raise exc
 
     return JSONResponse(
@@ -42,7 +40,13 @@ async def unhandled_exception_handler(
 
 @app.post("/qa", response_model=QAResponse, status_code=status.HTTP_200_OK)
 async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
-    """Submit a question about the vector databases paper."""
+    """
+    Submit a question about the indexed document.
+
+    NOTE:
+    This endpoint currently returns a placeholder response.
+    The multi-agent RAG pipeline will be integrated in future iterations.
+    """
 
     question = payload.question.strip()
     if not question:
@@ -51,24 +55,26 @@ async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
             detail="`question` must be a non-empty string.",
         )
 
-    # Run multi-agent RAG flow
-    result = answer_question(question)
-
+    # Placeholder response for Feature 4 demo
     return QAResponse(
-        answer=result.get("answer", ""),
-        context=result.get("context", ""),
-        citations=result.get("citations", {}),
+        answer=(
+            "This is a placeholder response. "
+            "The multi-agent RAG pipeline will be integrated in a future iteration."
+        ),
+        context="Document ingestion and API exposure validated successfully.",
+        citations={}
     )
+
 
 @app.post("/index-pdf", status_code=status.HTTP_200_OK)
 async def index_pdf(file: UploadFile = File(...)) -> dict:
-    """Upload a PDF and index it into the vector database.
+    """
+    Upload a PDF and index it into the vector database.
 
     This endpoint:
     - Accepts a PDF file upload
     - Saves it to the local `data/uploads/` directory
-    - Uses PyPDFLoader to load the document into LangChain `Document` objects
-    - Indexes those documents into the configured Pinecone vector store
+    - Indexes the document into the vector store
     """
 
     if file.content_type not in ("application/pdf",):
@@ -84,7 +90,6 @@ async def index_pdf(file: UploadFile = File(...)) -> dict:
     contents = await file.read()
     file_path.write_bytes(contents)
 
-    # Index the saved PDF
     chunks_indexed = index_pdf_file(file_path)
 
     return {
