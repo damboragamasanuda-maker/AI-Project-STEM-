@@ -2,6 +2,8 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from functools import lru_cache
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -23,3 +25,8 @@ class Settings(BaseSettings):
 
     # Retrieval
     retrieval_k: int = 4
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
