@@ -3,59 +3,134 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DOCU-MIND</title>
+  <title>IKMS Spark</title>
+
   <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
+
 <body>
+  <div class="bg-blobs" aria-hidden="true">
+    <span class="blob b1"></span>
+    <span class="blob b2"></span>
+    <span class="blob b3"></span>
+  </div>
+
   <header class="topbar">
     <div class="brand">
-      <div class="logo">📄</div>
-      <div>
-        <div class="title">DOCU-MIND</div>
-        <div class="subtitle">AI Document Question Answering System</div>
+      <div class="logo" title="IKMS Spark">
+        <span class="logo-mark">✨</span>
+      </div>
+      <div class="brand-text">
+        <div class="title">IKMS Spark</div>
+        <div class="subtitle">Colorful AI PDF Q&A • Upload → Ask → Get Answers</div>
       </div>
     </div>
-    <div class="status">
-      <span class="dot"></span>
-      <span id="statusText">System Ready</span>
+
+    <div class="right">
+      <div class="pill">
+        <span class="pill-dot" id="statusDot"></span>
+        <span id="statusText">Ready</span>
+      </div>
+      <a class="pill linkpill" href="/docs" target="_blank" rel="noreferrer">API Docs</a>
     </div>
   </header>
 
-  <main class="container">
-    <section class="card upload">
-      <div class="upload-box" id="dropzone">
-        <div class="upload-icon">⬆️</div>
-        <h2>Upload Documents</h2>
-        <p>Drag & drop your PDF here or click to browse</p>
-        <small>PDF ONLY • up to ~50MB per file</small>
-        <input id="fileInput" type="file" accept="application/pdf" hidden />
-        <button id="browseBtn" class="btn">Browse PDF</button>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-left">
+        <h1>
+          Ask your PDFs like a chatbot
+          <span class="grad">— fast, simple, colorful.</span>
+        </h1>
+        <p>
+          Drop a PDF, index it, then ask questions. Great for notes, research papers, and handouts.
+        </p>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-k">PDF</div>
+            <div class="stat-v">Upload & Index</div>
+          </div>
+          <div class="stat">
+            <div class="stat-k">Q&A</div>
+            <div class="stat-v">Instant Answers</div>
+          </div>
+          <div class="stat">
+            <div class="stat-k">API</div>
+            <div class="stat-v">FastAPI /docs</div>
+          </div>
+        </div>
       </div>
 
-      <div class="upload-meta">
-        <div id="uploadResult" class="muted">No file uploaded yet.</div>
+      <div class="hero-right">
+        <div class="card upload-card">
+          <div class="card-head">
+            <div class="card-title">Upload</div>
+            <div class="chip">PDF only</div>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <div class="dz-icon">📎</div>
+            <div class="dz-title">Drop your PDF here</div>
+            <div class="dz-sub">or click to browse</div>
+
+            <input id="fileInput" type="file" accept="application/pdf" hidden />
+            <button id="browseBtn" class="btn btn-ghost" type="button">Browse PDF</button>
+          </div>
+
+          <div class="meta">
+            <div id="uploadResult" class="meta-line">No file uploaded yet.</div>
+            <div class="progress-wrap">
+              <div class="progress" id="progressBar"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card qa-card">
+          <div class="card-head">
+            <div class="card-title">Ask</div>
+            <div class="chip chip2">Chat style</div>
+          </div>
+
+          <div class="chat">
+            <div class="bubble sys">
+              Upload a PDF, then ask a question like: <b>“Summarize section 2”</b> or <b>“What is the conclusion?”</b>
+            </div>
+
+            <div class="bubble ai" id="answerBubble">
+              <div class="bubble-label">Answer</div>
+              <pre id="answerBox">—</pre>
+            </div>
+          </div>
+
+          <div class="askrow">
+            <input id="questionInput" placeholder="Ask a question about your document..." />
+            <button id="askBtn" class="btn btn-primary" type="button">
+              <span class="btn-icon">➤</span>
+              <span class="btn-text">Ask</span>
+            </button>
+          </div>
+
+          <div class="mini-links">
+            <a href="/health" target="_blank" rel="noreferrer">Health</a>
+            <span class="sep">•</span>
+            <a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI</a>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="card qa">
-      <h2>Ask a Question</h2>
-      <p class="muted">Ask something about the uploaded document.</p>
-
-      <div class="qa-row">
-        <input id="questionInput" placeholder="Ask a question about your document..." />
-        <button id="askBtn" class="btn primary">➤</button>
+    <footer class="footer">
+      <div>© 2026 • IKMS Spark</div>
+      <div class="footer-right">
+        <span class="tag">Railway</span>
+        <span class="tag">FastAPI</span>
+        <span class="tag">PDF Q&A</span>
       </div>
-
-      <div class="answer">
-        <div class="muted">Answer</div>
-        <pre id="answerBox">—</pre>
-      </div>
-
-      <div class="links">
-        <a href="/docs" target="_blank">Open API Docs</a>
-        <a href="/health" target="_blank">Health</a>
-      </div>
-    </section>
+    </footer>
   </main>
 
   <script src="/static/app.js"></script>

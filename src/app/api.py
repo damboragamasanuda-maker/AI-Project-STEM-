@@ -11,7 +11,7 @@ from .services.indexing_service import index_pdf_file
 BASE_DIR = Path(__file__).resolve().parents[2]  # points to project root if structure is src/app/api.py
 
 app = FastAPI(
-    title="Class 12 Multi-Agent RAG Demo",
+    title="IKMS Spark",
     description=(
         "Demo API for asking questions about a vector databases paper. "
         "The `/qa` endpoint currently returns placeholder responses and "
