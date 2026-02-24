@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from .models import QuestionRequest, QAResponse
 from .services.indexing_service import index_pdf_file
 
+
 app = FastAPI(
     title="Class 12 Multi-Agent RAG Demo",
     description=(
@@ -14,10 +15,14 @@ app = FastAPI(
         "will be wired to a multi-agent RAG pipeline in later user stories."
     ),
     version="0.1.0",
+    docs_url="/",              # ✅ Swagger UI at root
+    redoc_url=None,            # optional (disable redoc)
+    openapi_url="/openapi.json",
 )
 
 
-@app.get("/")
+# ✅ Health check moved to /health
+@app.get("/health")
 def health():
     return {"status": "ok"}
 
