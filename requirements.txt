@@ -12,3 +12,6 @@ langchain==1.2.6
 langchain-community==0.4.1
 langchain-core==1.2.7
 langchain-text-splitters==1.1.0
+langchain-openai==0.1.25
+openai==1.63.0
+pinecone-client==5.0.1
