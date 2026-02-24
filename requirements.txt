@@ -10,14 +10,10 @@ jinja2==3.1.4
 
 pypdf==4.2.0
 
-# LangChain (compatible versions)
 langchain==0.2.16
 langchain-core==0.2.38
 langchain-community==0.2.16
 langchain-text-splitters==0.2.4
-
-# Needed because your code imports ChatOpenAI
 langchain-openai==0.1.25
 
-# Must be >= 1.40 for langchain-openai
 openai>=1.40.0
