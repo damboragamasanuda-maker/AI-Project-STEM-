@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DOCU-MIND</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">📄</div>
+      <div>
+        <div class="title">DOCU-MIND</div>
+        <div class="subtitle">AI Document Question Answering System</div>
+      </div>
+    </div>
+    <div class="status">
+      <span class="dot"></span>
+      <span id="statusText">System Ready</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card upload">
+      <div class="upload-box" id="dropzone">
+        <div class="upload-icon">⬆️</div>
+        <h2>Upload Documents</h2>
+        <p>Drag & drop your PDF here or click to browse</p>
+        <small>PDF ONLY • up to ~50MB per file</small>
+        <input id="fileInput" type="file" accept="application/pdf" hidden />
+        <button id="browseBtn" class="btn">Browse PDF</button>
+      </div>
+
+      <div class="upload-meta">
+        <div id="uploadResult" class="muted">No file uploaded yet.</div>
+      </div>
+    </section>
+
+    <section class="card qa">
+      <h2>Ask a Question</h2>
+      <p class="muted">Ask something about the uploaded document.</p>
+
+      <div class="qa-row">
+        <input id="questionInput" placeholder="Ask a question about your document..." />
+        <button id="askBtn" class="btn primary">➤</button>
+      </div>
+
+      <div class="answer">
+        <div class="muted">Answer</div>
+        <pre id="answerBox">—</pre>
+      </div>
+
+      <div class="links">
+        <a href="/docs" target="_blank">Open API Docs</a>
+        <a href="/health" target="_blank">Health</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

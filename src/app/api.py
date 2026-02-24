@@ -1,10 +1,14 @@
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from .models import QuestionRequest, QAResponse
 from .services.indexing_service import index_pdf_file
+
+BASE_DIR = Path(__file__).resolve().parents[2]  # points to project root if structure is src/app/api.py
 
 app = FastAPI(
     title="Class 12 Multi-Agent RAG Demo",
@@ -14,16 +18,23 @@ app = FastAPI(
         "will be wired to a multi-agent RAG pipeline in later user stories."
     ),
     version="0.1.0",
-    docs_url="/",              # ✅ Swagger UI at root
+    docs_url="/docs",          # ✅ Swagger here
     redoc_url=None,
     openapi_url="/openapi.json",
 )
 
-# ✅ Health moved away from / so Swagger can use /
+# ✅ Serve frontend assets
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# ✅ Clean UI at /
+@app.get("/", response_class=HTMLResponse)
+async def ui(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -33,7 +44,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Internal server error"},
     )
-
 
 @app.post("/qa", response_model=QAResponse, status_code=status.HTTP_200_OK)
 async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
@@ -52,7 +62,6 @@ async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
         context="Document ingestion and API exposure validated successfully.",
         citations={},
     )
-
 
 @app.post("/index-pdf", status_code=status.HTTP_200_OK)
 async def index_pdf(file: UploadFile = File(...)) -> dict:
