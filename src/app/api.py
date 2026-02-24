@@ -1,6 +1,7 @@
 from pathlib import Path
 import tempfile
 import traceback
+import os
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -39,6 +40,18 @@ async def ui(request: Request):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/debug")
+def debug():
+    # Useful for Railway debugging
+    return {
+        "status": "ok",
+        "port_env": os.getenv("PORT"),
+        "tmp_dir": tempfile.gettempdir(),
+        "base_dir": str(BASE_DIR),
+        "static_dir": str(BASE_DIR / "static"),
+        "templates_dir": str(BASE_DIR / "templates"),
+    }
 
 
 @app.exception_handler(Exception)
