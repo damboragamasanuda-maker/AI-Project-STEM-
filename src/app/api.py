@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from .services.qa_service import answer_question
 
 from .models import QuestionRequest, QAResponse
 from .services.indexing_service import index_pdf_file
@@ -115,18 +116,22 @@ async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
         )
 
     try:
-        # Lazy import so app doesn't crash on startup if deps/env missing
-        from .services.qa_service import answer_question
-
-        result = answer_question(question) or {}
+        result = answer_question(question)
 
         return QAResponse(
-            answer=str(result.get("answer", "")) or "No answer returned.",
-            context=str(result.get("context", "")) if result.get("context") is not None else "",
-            citations=result.get("citations", {}) if isinstance(result.get("citations", {}), dict) else {},
+            answer=str(result.get("answer", "")) or "No answer generated.",
+            context=str(result.get("context", "")) or "",
+            citations=result.get("citations", {}) or {},
         )
 
     except Exception as e:
+        # show real error in Railway logs
         print("QA_ERROR:", repr(e))
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"QA failed: {str(e)}")
+
+        # return user-friendly error without crashing the app
+        return QAResponse(
+            answer=f"❌ Error: QA failed: {str(e)}",
+            context="",
+            citations={},
+        )
