@@ -2,18 +2,19 @@
 Agent implementations for the multi-agent RAG flow.
 
 This module defines three agents (Retrieval, Summarization, Verification)
-and thin node functions that LangGraph uses to invoke them.
+and thin node functions that the graph uses to invoke them.
 
-Compatible with LangChain 0.2.x (no `create_agent`).
+Compatible with LangChain 0.2.x.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from ..llm.factory import create_chat_model
 from .prompts import (
@@ -26,7 +27,6 @@ from .tools import retrieval_tool
 
 
 def _extract_last_ai_content(messages: List[object]) -> str:
-    """Extract the content of the last AIMessage in a messages list."""
     for msg in reversed(messages):
         if isinstance(msg, AIMessage):
             return str(msg.content)
@@ -34,7 +34,6 @@ def _extract_last_ai_content(messages: List[object]) -> str:
 
 
 def _extract_last_human_content(messages: List[object]) -> str:
-    """Extract the content of the last HumanMessage in a messages list."""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             return str(msg.content)
@@ -42,15 +41,6 @@ def _extract_last_human_content(messages: List[object]) -> str:
 
 
 def _build_react_prompt(system_prompt: str) -> PromptTemplate:
-    """
-    Build a ReAct prompt compatible with `create_react_agent` (LangChain 0.2.x).
-
-    Required variables for ReAct agent:
-      - input
-      - tools
-      - tool_names
-      - agent_scratchpad
-    """
     template = f"""{system_prompt}
 
 You have access to the following tools:
@@ -79,10 +69,12 @@ Question: {{input}}
 
 class ReActAgentWrapper:
     """
-    Wraps a LangChain AgentExecutor so it behaves like:
+    Wraps an AgentExecutor so it behaves like:
       agent.invoke({"messages": [HumanMessage(...)]}) -> {"messages": [...]}
 
-    Also emits a ToolMessage with (content=context, artifact=citations) when tools run.
+    NOTE:
+    - We do NOT create ToolMessage manually (avoids tool_call_id errors).
+    - We read tool output from intermediate_steps instead.
     """
 
     def __init__(self, system_prompt: str, tools: List[Any]):
@@ -93,39 +85,37 @@ class ReActAgentWrapper:
             agent=agent,
             tools=tools,
             verbose=True,
-            return_intermediate_steps=True,  # so we can capture tool outputs
+            return_intermediate_steps=True,
         )
 
     def _parse_last_tool_observation(
         self, intermediate_steps: List[Tuple[Any, Any]]
     ) -> Tuple[str, Optional[dict]]:
         """
-        Convert the last tool observation into:
-          (context_string, citations_dict_or_none)
-
-        Supports observation being:
-          - str
-          - dict with keys like {"context": "...", "citations": {...}}
-          - dict with keys like {"text": "...", "citations": {...}}
-          - anything else (fallback to str())
+        Our retrieval_tool returns a JSON string.
+        Parse it into (context, citations).
         """
         if not intermediate_steps:
             return "", None
 
         _action, obs = intermediate_steps[-1]
 
-        # If your tool returns a dict, try common keys.
+        # Tool returned JSON string
+        if isinstance(obs, str):
+            try:
+                payload = json.loads(obs)
+                context = payload.get("context", "")
+                citations = payload.get("citations", None)
+                return str(context), citations if isinstance(citations, dict) else None
+            except Exception:
+                return obs, None
+
+        # Tool returned dict (fallback)
         if isinstance(obs, dict):
-            context = (
-                obs.get("context")
-                or obs.get("text")
-                or obs.get("content")
-                or str(obs)
-            )
+            context = obs.get("context") or obs.get("text") or obs.get("content") or str(obs)
             citations = obs.get("citations") or obs.get("artifact")
             return str(context), citations if isinstance(citations, dict) else None
 
-        # If tool returns a plain string
         return str(obs), None
 
     def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -139,24 +129,20 @@ class ReActAgentWrapper:
         output_text = result.get("output", "")
         intermediate_steps = result.get("intermediate_steps", [])
 
+        # We'll return these separately instead of ToolMessage
         context, citations = self._parse_last_tool_observation(intermediate_steps)
 
         out_messages: List[object] = list(messages)
-
-        # Emit ToolMessage so your retrieval_node can read it
-        if context:
-            out_messages.append(ToolMessage(content=context, artifact=citations))
-
         out_messages.append(AIMessage(content=str(output_text)))
-        return {"messages": out_messages}
+
+        # include tool payload alongside messages (so retrieval_node can read it)
+        return {
+            "messages": out_messages,
+            "tool_payload": {"context": context, "citations": citations},
+        }
 
 
 class SimpleChatWrapper:
-    """
-    Simple wrapper for "agent-like" invoke() using only the chat model,
-    keeping the same {"messages": [...]} IO shape.
-    """
-
     def __init__(self, system_prompt: str):
         self.llm = create_chat_model()
         self.system_prompt = system_prompt
@@ -168,7 +154,7 @@ class SimpleChatWrapper:
         return {"messages": list(messages) + [ai]}
 
 
-# ✅ Define agents at module level for reuse (same as before)
+# Agents
 retrieval_agent = ReActAgentWrapper(
     system_prompt=RETRIEVAL_SYSTEM_PROMPT,
     tools=[retrieval_tool],
@@ -184,44 +170,30 @@ verification_agent = SimpleChatWrapper(
 
 
 def retrieval_node(state: QAState) -> QAState:
-    """Retrieval Agent node: gathers context and citations from vector store."""
     question = state["question"]
 
     result = retrieval_agent.invoke({"messages": [HumanMessage(content=question)]})
-    messages = result.get("messages", [])
 
-    context = ""
-    citations = None
+    tool_payload = result.get("tool_payload", {}) or {}
+    context = tool_payload.get("context", "") or ""
+    citations = tool_payload.get("citations", None)
 
-    # Find the LAST ToolMessage (retrieval result)
-    for msg in reversed(messages):
-        if isinstance(msg, ToolMessage):
-            context = str(msg.content)
-            citations = msg.artifact
-            break
-
-    return {
-        "context": context,
-        "citations": citations,
-    }
+    return {"context": context, "citations": citations}
 
 
 def summarization_node(state: QAState) -> QAState:
-    """Summarization node: generates draft answer from context."""
     question = state["question"]
     context = state.get("context", "")
 
     user_content = f"Question: {question}\n\nContext:\n{context}"
 
     result = summarization_agent.invoke({"messages": [HumanMessage(content=user_content)]})
-    messages = result.get("messages", [])
-    draft_answer = _extract_last_ai_content(messages)
+    draft_answer = _extract_last_ai_content(result.get("messages", []))
 
     return {"draft_answer": draft_answer}
 
 
 def verification_node(state: QAState) -> QAState:
-    """Verification node: verifies and corrects the draft answer."""
     question = state["question"]
     context = state.get("context", "")
     draft_answer = state.get("draft_answer", "")
@@ -235,10 +207,10 @@ Draft Answer:
 {draft_answer}
 
 Please verify and correct the draft answer, removing any unsupported claims.
-If the answer is not in the context, say you cannot find it in the document."""
+If the answer is not in the context, say you cannot find it in the document.
+"""
 
     result = verification_agent.invoke({"messages": [HumanMessage(content=user_content)]})
-    messages = result.get("messages", [])
-    answer = _extract_last_ai_content(messages)
+    answer = _extract_last_ai_content(result.get("messages", []))
 
     return {"answer": answer}
