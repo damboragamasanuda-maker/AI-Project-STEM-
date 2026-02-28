@@ -10,13 +10,9 @@ Compatible with LangChain 0.2.x.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from ..retrieval.vector_store import retrieve
-from ..retrieval.serialization import serialize_chunks_with_ids
 
 from ..llm.factory import create_chat_model
 from .prompts import (
@@ -35,116 +31,9 @@ def _extract_last_ai_content(messages: List[object]) -> str:
     return ""
 
 
-def _extract_last_human_content(messages: List[object]) -> str:
-    for msg in reversed(messages):
-        if isinstance(msg, HumanMessage):
-            return str(msg.content)
-    return ""
-
-
-def _build_react_prompt(system_prompt: str) -> PromptTemplate:
-    template = f"""{system_prompt}
-
-You have access to the following tools:
-{{tools}}
-
-Use the following format:
-
-Question: {{input}}
-Thought: you should always think about what to do
-Action: the action to take, must be one of [{{tool_names}}]
-Action Input: the input to the action
-Observation: the result of the action
-... (repeat Thought/Action/Action Input/Observation as needed)
-Thought: I now know the final answer
-Final Answer: the final answer to the original question
-
-Begin.
-
-Question: {{input}}
-{{agent_scratchpad}}"""
-    return PromptTemplate(
-        template=template,
-        input_variables=["input", "tools", "tool_names", "agent_scratchpad"],
-    )
-
-
-class ReActAgentWrapper:
-    """
-    Wraps an AgentExecutor so it behaves like:
-      agent.invoke({"messages": [HumanMessage(...)]}) -> {"messages": [...]}
-
-    NOTE:
-    - We do NOT create ToolMessage manually (avoids tool_call_id errors).
-    - We read tool output from intermediate_steps instead.
-    """
-
-    def __init__(self, system_prompt: str, tools: List[Any]):
-        llm = create_chat_model()
-        prompt = _build_react_prompt(system_prompt)
-        agent = create_react_agent(llm=llm, tools=tools, prompt=prompt)
-        self.executor = AgentExecutor(
-            agent=agent,
-            tools=tools,
-            verbose=True,
-            return_intermediate_steps=True,
-        )
-
-    def _parse_last_tool_observation(
-        self, intermediate_steps: List[Tuple[Any, Any]]
-    ) -> Tuple[str, Optional[dict]]:
-        """
-        Our retrieval_tool returns a JSON string.
-        Parse it into (context, citations).
-        """
-        if not intermediate_steps:
-            return "", None
-
-        _action, obs = intermediate_steps[-1]
-
-        # Tool returned JSON string
-        if isinstance(obs, str):
-            try:
-                payload = json.loads(obs)
-                context = payload.get("context", "")
-                citations = payload.get("citations", None)
-                return str(context), citations if isinstance(citations, dict) else None
-            except Exception:
-                return obs, None
-
-        # Tool returned dict (fallback)
-        if isinstance(obs, dict):
-            context = obs.get("context") or obs.get("text") or obs.get("content") or str(obs)
-            citations = obs.get("citations") or obs.get("artifact")
-            return str(context), citations if isinstance(citations, dict) else None
-
-        return str(obs), None
-
-    def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        messages = payload.get("messages", [])
-        question = _extract_last_human_content(messages).strip()
-
-        if not question:
-            return {"messages": messages + [AIMessage(content="No question provided.")]}
-
-        result = self.executor.invoke({"input": question})
-        output_text = result.get("output", "")
-        intermediate_steps = result.get("intermediate_steps", [])
-
-        # We'll return these separately instead of ToolMessage
-        context, citations = self._parse_last_tool_observation(intermediate_steps)
-
-        out_messages: List[object] = list(messages)
-        out_messages.append(AIMessage(content=str(output_text)))
-
-        # include tool payload alongside messages (so retrieval_node can read it)
-        return {
-            "messages": out_messages,
-            "tool_payload": {"context": context, "citations": citations},
-        }
-
-
 class SimpleChatWrapper:
+    """Simple wrapper that keeps {"messages":[...]} IO shape."""
+
     def __init__(self, system_prompt: str):
         self.llm = create_chat_model()
         self.system_prompt = system_prompt
@@ -156,52 +45,52 @@ class SimpleChatWrapper:
         return {"messages": list(messages) + [ai]}
 
 
-# Agents
-retrieval_agent = ReActAgentWrapper(
-    system_prompt=RETRIEVAL_SYSTEM_PROMPT,
-    tools=[retrieval_tool],
-)
-
-summarization_agent = SimpleChatWrapper(
-    system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
-)
-
-verification_agent = SimpleChatWrapper(
-    system_prompt=VERIFICATION_SYSTEM_PROMPT,
-)
+# Agents (Summarization + Verification use the LLM)
+summarization_agent = SimpleChatWrapper(system_prompt=SUMMARIZATION_SYSTEM_PROMPT)
+verification_agent = SimpleChatWrapper(system_prompt=VERIFICATION_SYSTEM_PROMPT)
 
 
 def retrieval_node(state: QAState) -> QAState:
-    """Retrieval node: always retrieves context + citations from vector store."""
+    """
+    Retrieval node:
+    - Always retrieves context + citations from vector store.
+    - Calls retrieval_tool directly (NO ToolMessage / NO ReAct).
+    """
     question = (state.get("question") or "").strip()
-
-    # Heuristic: add keywords for financial/table questions
-    query = question
-    q_lower = question.lower()
-    if "revenue" in q_lower and ("2002" in q_lower or "2001" in q_lower):
-        query = f"{question}\nKeywords: REVENUE 2002 2001 STATEMENT OF INCOME"
-
-    docs = retrieve(query, k=6)
-
-    # DEBUG (shows in Railway logs)
-    print("RETRIEVAL_QUERY:", query)
-    print("RETRIEVAL_DOCS_COUNT:", len(docs))
-    if docs:
-        print("TOP_DOC_PREVIEW:", (docs[0].page_content or "")[:400])
-
-    if not docs:
+    if not question:
         return {"context": "", "citations": {}}
 
-    context, citations = serialize_chunks_with_ids(docs)
+    # Optional boost for finance/table-style questions
+    query = question
+    q_lower = question.lower()
+    if any(word in q_lower for word in ["revenue", "income", "profit", "expenses", "sales"]):
+        query = f"{question}\nKeywords: revenue income statement 2001 2002 totals"
 
-    # Optional: if context is tiny, treat as failure
-    if not context or len(context.strip()) < 30:
+    # Call your tool directly (it returns JSON string)
+    obs = retrieval_tool.run(query)
+
+    try:
+        payload = json.loads(obs)
+        context = payload.get("context", "") or ""
+        citations = payload.get("citations", {}) or {}
+    except Exception:
+        # fallback if tool returns something unexpected
+        context = str(obs)
+        citations = {}
+
+    # DEBUG prints (shows in Railway logs)
+    print("RETRIEVAL_QUERY:", query)
+    print("CONTEXT_LEN:", len(context))
+
+    # treat tiny context as retrieval failure
+    if len(context.strip()) < 30:
         return {"context": "", "citations": {}}
 
     return {"context": context, "citations": citations}
 
+
 def summarization_node(state: QAState) -> QAState:
-    question = state["question"]
+    question = state.get("question", "")
     context = state.get("context", "")
 
     user_content = f"Question: {question}\n\nContext:\n{context}"
@@ -213,7 +102,7 @@ def summarization_node(state: QAState) -> QAState:
 
 
 def verification_node(state: QAState) -> QAState:
-    question = state["question"]
+    question = state.get("question", "")
     context = state.get("context", "")
     draft_answer = state.get("draft_answer", "")
 
@@ -226,7 +115,7 @@ Draft Answer:
 {draft_answer}
 
 Please verify and correct the draft answer, removing any unsupported claims.
-If the answer is not in the context, say you cannot find it in the document.
+If the answer is not in the context, say: "I cannot find it in the document."
 """
 
     result = verification_agent.invoke({"messages": [HumanMessage(content=user_content)]})
