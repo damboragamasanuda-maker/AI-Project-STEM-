@@ -173,21 +173,32 @@ verification_agent = SimpleChatWrapper(
 
 def retrieval_node(state: QAState) -> QAState:
     """Retrieval node: always retrieves context + citations from vector store."""
-    question = state["question"].strip()
+    question = (state.get("question") or "").strip()
 
-    docs = retrieve(question, k=4)
+    # Heuristic: add keywords for financial/table questions
+    query = question
+    q_lower = question.lower()
+    if "revenue" in q_lower and ("2002" in q_lower or "2001" in q_lower):
+        query = f"{question}\nKeywords: REVENUE 2002 2001 STATEMENT OF INCOME"
 
-    # If nothing was found, return empty context
+    docs = retrieve(query, k=6)
+
+    # DEBUG (shows in Railway logs)
+    print("RETRIEVAL_QUERY:", query)
+    print("RETRIEVAL_DOCS_COUNT:", len(docs))
+    if docs:
+        print("TOP_DOC_PREVIEW:", (docs[0].page_content or "")[:400])
+
     if not docs:
-        return {"context": "", "citations": None}
+        return {"context": "", "citations": {}}
 
     context, citations = serialize_chunks_with_ids(docs)
 
-    return {
-        "context": context,
-        "citations": citations,
-    }
+    # Optional: if context is tiny, treat as failure
+    if not context or len(context.strip()) < 30:
+        return {"context": "", "citations": {}}
 
+    return {"context": context, "citations": citations}
 
 def summarization_node(state: QAState) -> QAState:
     question = state["question"]
