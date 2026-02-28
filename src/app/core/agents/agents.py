@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from ..retrieval.vector_store import retrieve
+from ..retrieval.serialization import serialize_chunks_with_ids
 
 from ..llm.factory import create_chat_model
 from .prompts import (
@@ -170,15 +172,21 @@ verification_agent = SimpleChatWrapper(
 
 
 def retrieval_node(state: QAState) -> QAState:
-    question = state["question"]
+    """Retrieval node: always retrieves context + citations from vector store."""
+    question = state["question"].strip()
 
-    result = retrieval_agent.invoke({"messages": [HumanMessage(content=question)]})
+    docs = retrieve(question, k=4)
 
-    tool_payload = result.get("tool_payload", {}) or {}
-    context = tool_payload.get("context", "") or ""
-    citations = tool_payload.get("citations", None)
+    # If nothing was found, return empty context
+    if not docs:
+        return {"context": "", "citations": None}
 
-    return {"context": context, "citations": citations}
+    context, citations = serialize_chunks_with_ids(docs)
+
+    return {
+        "context": context,
+        "citations": citations,
+    }
 
 
 def summarization_node(state: QAState) -> QAState:
