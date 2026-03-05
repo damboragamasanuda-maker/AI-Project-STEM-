@@ -18,3 +18,10 @@ langchain-openai==0.1.25
 langgraph==0.2.39
 
 openai>=1.40.0
+
+# REQUIRED FOR PINECONE
+pinecone>=5.0.0
+langchain-pinecone>=0.1.0
+
+# tokenizer for embeddings
+tiktoken>=0.7.0
