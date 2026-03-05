@@ -25,3 +25,7 @@ langchain-pinecone>=0.1.0
 
 # tokenizer for embeddings
 tiktoken>=0.7.0
+
+pinecone>=5.0.0
+langchain-pinecone>=0.1.0
+tiktoken>=0.7.0
