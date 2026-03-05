@@ -10,13 +10,17 @@ Demo mode:
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from ..config import get_settings
+
+# Keep the last failure reason so the UI can show the *real* cause
+_LAST_VS_ERROR: Optional[str] = None
 
 
 def _split_docs(docs: List[Document]) -> List[Document]:
@@ -28,22 +32,52 @@ def _split_docs(docs: List[Document]) -> List[Document]:
     return splitter.split_documents(docs)
 
 
-def _pinecone_enabled(settings) -> bool:
-    return bool(getattr(settings, "pinecone_api_key", None)) and bool(
-        getattr(settings, "pinecone_index_name", None)
-    )
+def _read_pinecone_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Read Pinecone config from settings *or* env vars (Railway).
+    Returns: (api_key, index_name, namespace)
+    """
+    settings = get_settings()
+
+    # settings values (preferred)
+    api_key = getattr(settings, "pinecone_api_key", None)
+    index_name = getattr(settings, "pinecone_index_name", None)
+    namespace = getattr(settings, "pinecone_namespace", None)
+
+    # fallback to env vars (handles config mismatch / alias issues)
+    api_key = api_key or os.getenv("PINECONE_API_KEY") or os.getenv("pinecone_api_key")
+    index_name = index_name or os.getenv("PINECONE_INDEX_NAME") or os.getenv("pinecone_index_name")
+    namespace = namespace or os.getenv("PINECONE_NAMESPACE") or os.getenv("pinecone_namespace")
+
+    return api_key, index_name, namespace or None
 
 
-def _namespace(settings) -> Optional[str]:
-    return getattr(settings, "pinecone_namespace", None) or None
+def _vectorstore_unavailable_reason() -> str:
+    api_key, index_name, _ = _read_pinecone_config()
+
+    missing = []
+    if not api_key:
+        missing.append("PINECONE_API_KEY")
+    if not index_name:
+        missing.append("PINECONE_INDEX_NAME")
+
+    if missing:
+        return f"Missing env vars (or config not reading them): {', '.join(missing)}"
+
+    # If env vars exist, the only remaining cause is import/init failure
+    return _LAST_VS_ERROR or "Unknown vector store initialization error."
 
 
 @lru_cache(maxsize=1)
 def _get_vector_store():
-    settings = get_settings()
+    global _LAST_VS_ERROR
+    _LAST_VS_ERROR = None
 
-    if not _pinecone_enabled(settings):
-        print("VECTORSTORE_DISABLED: Missing Pinecone environment variables")
+    api_key, index_name, _ = _read_pinecone_config()
+
+    if not api_key or not index_name:
+        _LAST_VS_ERROR = "Pinecone disabled because env vars were not detected by config/env."
+        print("VECTORSTORE_DISABLED:", _LAST_VS_ERROR)
         return None
 
     try:
@@ -51,16 +85,22 @@ def _get_vector_store():
         from langchain_pinecone import PineconeVectorStore
         from langchain_openai import OpenAIEmbeddings
     except Exception as e:
-        print("VECTORSTORE_IMPORT_ERROR:", repr(e))
+        _LAST_VS_ERROR = f"Import error: {repr(e)}"
+        print("VECTORSTORE_IMPORT_ERROR:", _LAST_VS_ERROR)
         return None
 
-    # OpenAI embedding model
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    try:
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
-    pc = Pinecone(api_key=settings.pinecone_api_key)
-    index = pc.Index(settings.pinecone_index_name)
+        pc = Pinecone(api_key=api_key)
+        index = pc.Index(index_name)
 
-    return PineconeVectorStore(index=index, embedding=embeddings)
+        return PineconeVectorStore(index=index, embedding=embeddings)
+
+    except Exception as e:
+        _LAST_VS_ERROR = f"Initialization error: {repr(e)}"
+        print("VECTORSTORE_INIT_ERROR:", _LAST_VS_ERROR)
+        return None
 
 
 def get_retriever(k: Optional[int] = None):
@@ -71,7 +111,7 @@ def get_retriever(k: Optional[int] = None):
     if vs is None:
         return None
 
-    ns = _namespace(settings)
+    _, _, ns = _read_pinecone_config()
 
     return vs.as_retriever(
         search_type="mmr",
@@ -94,11 +134,10 @@ def index_documents(docs: List[Document]) -> int:
     if vs is None:
         raise RuntimeError(
             "Pinecone vector store is not available. "
-            "Check env vars + dependencies: pinecone, langchain-pinecone."
+            + _vectorstore_unavailable_reason()
         )
 
-    settings = get_settings()
-    ns = _namespace(settings)
+    _, _, ns = _read_pinecone_config()
 
     vs.add_documents(chunks, namespace=ns)
     return len(chunks)
