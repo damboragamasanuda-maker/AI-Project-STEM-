@@ -2,7 +2,7 @@
 Vector store wrapper.
 
 Production mode:
-- Pinecone + HuggingFace embeddings
+- Pinecone + OpenAI embeddings
 
 Demo mode:
 - If Pinecone isn't available, indexing FAILS (so you don't get fake "30 chunks indexed").
@@ -20,7 +20,6 @@ from ..config import get_settings
 
 
 def _split_docs(docs: List[Document]) -> List[Document]:
-    # Better for tables / statements than 500 chars
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1200,
         chunk_overlap=150,
@@ -36,7 +35,6 @@ def _pinecone_enabled(settings) -> bool:
 
 
 def _namespace(settings) -> Optional[str]:
-    # Optional: set PINECONE_NAMESPACE in Railway variables for clean separation
     return getattr(settings, "pinecone_namespace", None) or None
 
 
@@ -45,23 +43,22 @@ def _get_vector_store():
     settings = get_settings()
 
     if not _pinecone_enabled(settings):
+        print("VECTORSTORE_DISABLED: Missing Pinecone environment variables")
         return None
 
     try:
         from pinecone import Pinecone
         from langchain_pinecone import PineconeVectorStore
-        from langchain_huggingface import HuggingFaceEmbeddings
+        from langchain_openai import OpenAIEmbeddings
     except Exception as e:
-        # Dependencies missing -> disable
         print("VECTORSTORE_IMPORT_ERROR:", repr(e))
         return None
 
+    # OpenAI embedding model
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
     pc = Pinecone(api_key=settings.pinecone_api_key)
     index = pc.Index(settings.pinecone_index_name)
-
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
 
     return PineconeVectorStore(index=index, embedding=embeddings)
 
@@ -76,7 +73,6 @@ def get_retriever(k: Optional[int] = None):
 
     ns = _namespace(settings)
 
-    # MMR often works better than plain similarity for PDFs
     return vs.as_retriever(
         search_type="mmr",
         search_kwargs={"k": k, "fetch_k": max(20, k * 4), "namespace": ns},
@@ -96,10 +92,9 @@ def index_documents(docs: List[Document]) -> int:
 
     vs = _get_vector_store()
     if vs is None:
-        # IMPORTANT: don't pretend indexing worked
         raise RuntimeError(
             "Pinecone vector store is not available. "
-            "Check env vars + dependencies: pinecone, langchain-pinecone, langchain-huggingface."
+            "Check env vars + dependencies: pinecone, langchain-pinecone."
         )
 
     settings = get_settings()
