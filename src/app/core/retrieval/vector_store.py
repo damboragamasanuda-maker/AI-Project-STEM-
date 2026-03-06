@@ -90,7 +90,8 @@ def _get_vector_store():
         return None
 
     try:
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        settings = get_settings()
+        embeddings = OpenAIEmbeddings(api_key=settings.openai_api_key, model="text-embedding-3-small")
 
         pc = Pinecone(api_key=api_key)
         index = pc.Index(index_name)

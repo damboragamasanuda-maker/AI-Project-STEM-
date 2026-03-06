@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = Field(alias="OPENAI_API_KEY")
     openai_model_name: str = "gpt-4o-mini"
-    openai_embedding_model_name: str = "text-embedding-3-large"
+    openai_embedding_model_name: str = "text-embedding-3-small"
 
     # Pinecone
     pinecone_api_key: str = Field(alias="PINECONE_API_KEY")
