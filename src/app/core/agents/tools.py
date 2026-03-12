@@ -20,8 +20,13 @@ def retrieval_tool(query: str) -> str:
     - Do NOT return ToolMessage or tuples.
     - Returning JSON keeps it compatible with LangChain 0.2.x tools/agents.
     """
+
+    # retrieve the chunks from the pinecone db
+    # for this  use the question that user asked
+    # return the most simliar chunks for the question 
     docs = retrieve(query, k=4)
 
+    # return the chunks and created citations
     context, citations = serialize_chunks_with_ids(docs)
 
     return json.dumps(

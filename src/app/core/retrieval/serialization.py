@@ -3,7 +3,8 @@
 from typing import List, Tuple, Dict
 from langchain_core.documents import Document
 
-
+# create citation using retrieved chunks
+# citation format: [C1] 'page=1' , 'source=uploaded_pdf' , 'snippet=...'
 def serialize_chunks_with_ids(
     docs: List[Document],
 ) -> Tuple[str, Dict[str, dict]]:

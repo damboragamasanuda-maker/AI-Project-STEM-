@@ -119,7 +119,7 @@ def get_retriever(k: Optional[int] = None):
         search_kwargs={"k": k, "fetch_k": max(20, k * 4), "namespace": ns},
     )
 
-
+#This function retrieves relevant document chunks from the vector store.
 def retrieve(query: str, k: Optional[int] = None) -> List[Document]:
     retriever = get_retriever(k=k)
     if retriever is None:
