@@ -1,111 +1,144 @@
-"""
-Agent implementations for the multi-agent RAG flow.
+"""Agent implementations for the multi-agent RAG flow."""
 
-This module defines three agents (Retrieval, Summarization, Verification)
-and thin node functions that the graph uses to invoke them.
-
-Compatible with LangChain 0.2.x.
-"""
 
 from __future__ import annotations
-
 import json
 from typing import Any, Dict, List
-
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from ..llm.factory import create_chat_model
+
 from .prompts import (
-    RETRIEVAL_SYSTEM_PROMPT,
-    SUMMARIZATION_SYSTEM_PROMPT,
-    VERIFICATION_SYSTEM_PROMPT,
+    RETRIEVAL_SYSTEM_PROMPT,       # Prompt that controls retrieval agent
+    SUMMARIZATION_SYSTEM_PROMPT,   # Prompt that controls summarization agent
+    VERIFICATION_SYSTEM_PROMPT,    # Prompt that controls verification agent
 )
+
 from .state import QAState
+
 from .tools import retrieval_tool
 
+from langchain.agents import create_agent
 
+
+# Helper function to extract the final AI response from a message list
 def _extract_last_ai_content(messages: List[object]) -> str:
+
+    # Iterate through messages in reverse order
     for msg in reversed(messages):
+
+        # Check if the message was produced by the AI model
         if isinstance(msg, AIMessage):
+
+            
             return str(msg.content)
+
+    
     return ""
 
 
-class SimpleChatWrapper:
-    """Simple wrapper that keeps {"messages":[...]} IO shape."""
 
-    def __init__(self, system_prompt: str):
-        self.llm = create_chat_model()
-        self.system_prompt = system_prompt
+# Create retrieval agent that can call the vector store retrieval tool
+retrieval_agent = create_agent(
+    model=create_chat_model(),           
+    tools=[retrieval_tool],               
+    system_prompt=RETRIEVAL_SYSTEM_PROMPT 
+)
 
-    def invoke(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        messages = payload.get("messages", [])
-        chat_messages: List[Any] = [SystemMessage(content=self.system_prompt)] + list(messages)
-        ai = self.llm.invoke(chat_messages)
-        return {"messages": list(messages) + [ai]}
+# Create summarization agent responsible for generating draft answers
+summarization_agent = create_agent(
+    model=create_chat_model(),               
+    tools=[],                                
+    system_prompt=SUMMARIZATION_SYSTEM_PROMPT 
+)
+
+# Create verification agent responsible for fact-checking answers
+verification_agent = create_agent(
+    model=create_chat_model(),            
+    tools=[],                               
+    system_prompt=VERIFICATION_SYSTEM_PROMPT 
+)
 
 
-# Agents (Summarization + Verification use the LLM)
-summarization_agent = SimpleChatWrapper(system_prompt=SUMMARIZATION_SYSTEM_PROMPT)
-verification_agent = SimpleChatWrapper(system_prompt=VERIFICATION_SYSTEM_PROMPT)
-
-
+# Retrieval node responsible for fetching relevant context from the vector store
 def retrieval_node(state: QAState) -> QAState:
-    """
-    Retrieval node:
-    - Always retrieves context + citations from vector store.
-    - Calls retrieval_tool directly (NO ToolMessage / NO ReAct).
-    """
+
+    # Extract the user's question from the graph state
     question = (state.get("question") or "").strip()
+
     if not question:
         return {"context": "", "citations": {}}
 
-    # Optional boost for finance/table-style questions
     query = question
-    q_lower = question.lower()
-    if any(word in q_lower for word in ["revenue", "income", "profit", "expenses", "sales"]):
-        query = f"{question}\nKeywords: revenue income statement 2001 2002 totals"
 
-    # Call your tool directly (it returns JSON string)
-    obs = retrieval_tool.run(query)
+    # Invoke the retrieval agent with the user query
+    obs = retrieval_agent.invoke({"messages": [HumanMessage(content=query)]})
 
     try:
+
+        # Convert tool response into Python dictionary
         payload = json.loads(obs)
+
+        # Extract the retrieved document context
         context = payload.get("context", "") or ""
+
+        # Extract citation metadata if available
         citations = payload.get("citations", {}) or {}
+
     except Exception:
-        # fallback if tool returns something unexpected
+
+        # Treat entire response as context fallback
         context = str(obs)
+
+        # No citations available in fallback mode
         citations = {}
 
-    # DEBUG prints (shows in Railway logs)
     print("RETRIEVAL_QUERY:", query)
     print("CONTEXT_LEN:", len(context))
 
-    # treat tiny context as retrieval failure
+    # Treat very small context as retrieval failure
     if len(context.strip()) < 30:
         return {"context": "", "citations": {}}
 
+    # Return retrieved context and citations to the graph state
     return {"context": context, "citations": citations}
 
 
+# Summarization node responsible for generating a draft answer
 def summarization_node(state: QAState) -> QAState:
+
+    # Extract question from state
     question = state.get("question", "")
+
+    # Extract retrieved context from state
     context = state.get("context", "")
 
+    # Format input combining question and retrieved context
     user_content = f"Question: {question}\n\nContext:\n{context}"
 
+    # Invoke the summarization agent with the prepared input
     result = summarization_agent.invoke({"messages": [HumanMessage(content=user_content)]})
+
+    # Extract the final AI message content as the draft answer
     draft_answer = _extract_last_ai_content(result.get("messages", []))
 
+    # Return draft answer to the graph state
     return {"draft_answer": draft_answer}
 
 
+# Verification node responsible for validating the generated answer
 def verification_node(state: QAState) -> QAState:
+
+    # Extract the original user question
     question = state.get("question", "")
+
+    # Extract retrieved document context
     context = state.get("context", "")
+
+    # Extract the draft answer generated by the summarization agent
     draft_answer = state.get("draft_answer", "")
 
+    # Construct verification prompt combining question, context, and draft answer
     user_content = f"""Question: {question}
 
 Context:
@@ -118,7 +151,11 @@ Please verify and correct the draft answer, removing any unsupported claims.
 If the answer is not in the context, say: "I cannot find it in the document."
 """
 
+    # Invoke the verification agent to validate the draft answer
     result = verification_agent.invoke({"messages": [HumanMessage(content=user_content)]})
+
+    # Extract the final verified answer from the agent response
     answer = _extract_last_ai_content(result.get("messages", []))
 
+    # Return the verified answer to the graph state
     return {"answer": answer}
