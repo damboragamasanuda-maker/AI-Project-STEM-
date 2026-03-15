@@ -21,14 +21,16 @@ def create_qa_graph() -> Any:
     Returns:
         Compiled graph ready for execution.
     """
+    # LangGraph orchestrates the multi-agent workflow
     builder = StateGraph(QAState)
 
-    # Add nodes for each agent
+    # Add agents as nodes in the graph
     builder.add_node("retrieval", retrieval_node)
     builder.add_node("summarization", summarization_node)
     builder.add_node("verification", verification_node)
 
-    # Define linear flow: START -> retrieval -> summarization -> verification -> END
+    # Define the order of execution
+    # Retrieval -> Summarization -> Verification
     builder.add_edge(START, "retrieval")
     builder.add_edge("retrieval", "summarization")
     builder.add_edge("summarization", "verification")
@@ -42,7 +44,7 @@ def get_qa_graph() -> Any:
     """Get the compiled QA graph instance (singleton via LRU cache)."""
     return create_qa_graph()
 
-
+# Executes the entire pipeline when a user asks a question
 def run_qa_flow(question: str) -> Dict[str, Any]:
     """Run the complete multi-agent QA flow for a question.
 

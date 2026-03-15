@@ -22,7 +22,7 @@ from ..config import get_settings
 # Keep the last failure reason so the UI can show the *real* cause
 _LAST_VS_ERROR: Optional[str] = None
 
-
+# Splits large documents into smaller chunks so they can be embedded and retrieved efficiently
 def _split_docs(docs: List[Document]) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1200,
@@ -31,7 +31,8 @@ def _split_docs(docs: List[Document]) -> List[Document]:
     )
     return splitter.split_documents(docs)
 
-
+# Reads Pinecone configuration from settings or environment variables
+# This allows the system to work both locally and on Railway deployment
 def _read_pinecone_config() -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Read Pinecone config from settings *or* env vars (Railway).
@@ -67,7 +68,8 @@ def _vectorstore_unavailable_reason() -> str:
     # If env vars exist, the only remaining cause is import/init failure
     return _LAST_VS_ERROR or "Unknown vector store initialization error."
 
-
+# Caches the vector store connection so it is created only once
+# Improves performance and avoids reconnecting to Pinecone repeatedly
 @lru_cache(maxsize=1)
 def _get_vector_store():
     global _LAST_VS_ERROR
@@ -91,6 +93,7 @@ def _get_vector_store():
 
     try:
         settings = get_settings()
+        # Creates OpenAI embeddings and connects them to Pinecone index
         embeddings = OpenAIEmbeddings(api_key=settings.openai_api_key, model="text-embedding-3-small")
 
         pc = Pinecone(api_key=api_key)
@@ -114,6 +117,8 @@ def get_retriever(k: Optional[int] = None):
 
     _, _, ns = _read_pinecone_config()
 
+# Converts Pinecone vector store into a retriever object
+# MMR improves retrieval diversity and avoids returning similar chunks
     return vs.as_retriever(
         search_type="mmr",
         search_kwargs={"k": k, "fetch_k": max(20, k * 4), "namespace": ns},
@@ -127,7 +132,8 @@ def retrieve(query: str, k: Optional[int] = None) -> List[Document]:
         return []
     return retriever.invoke(query)
 
-
+# Used when indexing PDFs
+# Splits documents into chunks and stores them in Pinecone
 def index_documents(docs: List[Document]) -> int:
     chunks = _split_docs(docs)
 

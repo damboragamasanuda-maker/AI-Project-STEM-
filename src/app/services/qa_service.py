@@ -9,7 +9,7 @@ from typing import Dict, Any
 
 from ..core.agents.graph import run_qa_flow
 
-
+# Acts as a service layer between API and the LangGraph agent system
 def answer_question(question: str) -> Dict[str, Any]:
     """Run the multi-agent QA flow for a given question.
 
@@ -19,4 +19,5 @@ def answer_question(question: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing at least `answer` and `context` keys.
     """
+    # Runs the full multi-agent pipeline
     return run_qa_flow(question)

@@ -14,6 +14,7 @@ from .services.indexing_service import index_pdf_file
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # project root if src/app/api.py
 
+# FastAPI backend for the application
 app = FastAPI(
     title="IKMS Spark",
     description="Upload a PDF, index it, then ask questions (RAG).",
@@ -67,7 +68,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         content={"detail": "Internal server error"},
     )
 
-
+# Endpoint for uploading and indexing PDFs
 @app.post("/index-pdf", status_code=status.HTTP_200_OK)
 async def index_pdf(file: UploadFile = File(...)) -> dict:
     if file.content_type != "application/pdf":
@@ -78,6 +79,7 @@ async def index_pdf(file: UploadFile = File(...)) -> dict:
 
     try:
         # Railway-safe writable temp directory
+        # Saves uploaded PDF to a temporary directory before processing
         upload_dir = Path(tempfile.gettempdir()) / "ikms_uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,6 +92,7 @@ async def index_pdf(file: UploadFile = File(...)) -> dict:
 
         file_path.write_bytes(contents)
 
+        # Index the PDF into the vector database
         chunks_indexed = index_pdf_file(file_path)
 
         return {
@@ -105,7 +108,7 @@ async def index_pdf(file: UploadFile = File(...)) -> dict:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Indexing failed: {str(e)}")
 
-
+# Endpoint for asking questions
 @app.post("/qa", response_model=QAResponse, status_code=status.HTTP_200_OK)
 async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
     question = payload.question.strip()
@@ -116,8 +119,9 @@ async def qa_endpoint(payload: QuestionRequest) -> QAResponse:
         )
 
     try:
-        result = answer_question(question)
+        result = answer_question(question) # Runs the multi-agent RAG pipeline
 
+# Returns answer, retrieved context, and citations
         return QAResponse(
             answer=str(result.get("answer", "")) or "No answer generated.",
             context=str(result.get("context", "")) or "",
